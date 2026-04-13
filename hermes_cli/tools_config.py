@@ -200,6 +200,14 @@ TOOL_CATEGORIES = {
                 ],
             },
             {
+                "name": "Brave Search",
+                "tag": "Native web search with direct-page extraction fallback",
+                "web_backend": "brave",
+                "env_vars": [
+                    {"key": "BRAVE_API_KEY", "prompt": "Brave Search API key", "url": "https://brave.com/search/api"},
+                ],
+            },
+            {
                 "name": "Tavily",
                 "tag": "AI-native search, extract, and crawl",
                 "web_backend": "tavily",

@@ -301,6 +301,7 @@ class TestBackendSelection:
         "HERMES_ENABLE_NOUS_MANAGED_TOOLS",
         "EXA_API_KEY",
         "PARALLEL_API_KEY",
+        "BRAVE_API_KEY",
         "FIRECRAWL_API_KEY",
         "FIRECRAWL_API_URL",
         "FIRECRAWL_GATEWAY_URL",
@@ -348,6 +349,13 @@ class TestBackendSelection:
         with patch("tools.web_tools._load_web_config", return_value={"backend": "tavily"}):
             assert _get_backend() == "tavily"
 
+    def test_config_brave(self):
+        """web.backend=brave in config → 'brave' regardless of other keys."""
+        from tools.web_tools import _get_backend
+        with patch("tools.web_tools._load_web_config", return_value={"backend": "brave"}), \
+             patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test"}):
+            assert _get_backend() == "brave"
+
     def test_config_tavily_overrides_env_keys(self):
         """web.backend=tavily in config → 'tavily' even if Firecrawl key set."""
         from tools.web_tools import _get_backend
@@ -382,6 +390,13 @@ class TestBackendSelection:
         with patch("tools.web_tools._load_web_config", return_value={}), \
              patch.dict(os.environ, {"EXA_API_KEY": "exa-test"}):
             assert _get_backend() == "exa"
+
+    def test_fallback_brave_only_key(self):
+        """Only BRAVE_API_KEY set → 'brave'."""
+        from tools.web_tools import _get_backend
+        with patch("tools.web_tools._load_web_config", return_value={}), \
+             patch.dict(os.environ, {"BRAVE_API_KEY": "brave-test"}):
+            assert _get_backend() == "brave"
 
     def test_fallback_parallel_takes_priority_over_exa(self):
         """Exa should only win the fallback path when it is the only configured backend."""
@@ -526,6 +541,7 @@ class TestCheckWebApiKey:
         "HERMES_ENABLE_NOUS_MANAGED_TOOLS",
         "EXA_API_KEY",
         "PARALLEL_API_KEY",
+        "BRAVE_API_KEY",
         "FIRECRAWL_API_KEY",
         "FIRECRAWL_API_URL",
         "FIRECRAWL_GATEWAY_URL",
@@ -567,6 +583,11 @@ class TestCheckWebApiKey:
 
     def test_tavily_key_only(self):
         with patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test"}):
+            from tools.web_tools import check_web_api_key
+            assert check_web_api_key() is True
+
+    def test_brave_key_only(self):
+        with patch.dict(os.environ, {"BRAVE_API_KEY": "brave-test"}):
             from tools.web_tools import check_web_api_key
             assert check_web_api_key() is True
 

@@ -731,6 +731,7 @@ ENV_VARS_BY_VERSION: Dict[int, List[str]] = {
     5: ["WHATSAPP_ENABLED", "WHATSAPP_MODE", "WHATSAPP_ALLOWED_USERS",
         "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"],
     10: ["TAVILY_API_KEY"],
+    16: ["BRAVE_API_KEY", "BRAVE_API_BASE_URL"],
     11: ["TERMINAL_MODAL_MODE"],
 }
 
@@ -980,6 +981,22 @@ OPTIONAL_ENV_VARS = {
         "tools": ["web_search", "web_extract"],
         "password": True,
         "category": "tool",
+    },
+    "BRAVE_API_KEY": {
+        "description": "Brave Search API key for native web search and basic direct-page extraction",
+        "prompt": "Brave Search API key",
+        "url": "https://brave.com/search/api",
+        "tools": ["web_search", "web_extract"],
+        "password": True,
+        "category": "tool",
+    },
+    "BRAVE_API_BASE_URL": {
+        "description": "Brave Search API base URL override",
+        "prompt": "Brave Search base URL (leave empty for default)",
+        "url": None,
+        "password": False,
+        "category": "tool",
+        "advanced": True,
     },
     "FIRECRAWL_API_KEY": {
         "description": "Firecrawl API key for web search and scraping",
@@ -2699,6 +2716,7 @@ def show_config():
         ("VOICE_TOOLS_OPENAI_KEY", "OpenAI (STT/TTS)"),
         ("EXA_API_KEY", "Exa"),
         ("PARALLEL_API_KEY", "Parallel"),
+        ("BRAVE_API_KEY", "Brave Search"),
         ("FIRECRAWL_API_KEY", "Firecrawl"),
         ("TAVILY_API_KEY", "Tavily"),
         ("BROWSERBASE_API_KEY", "Browserbase"),
@@ -2875,7 +2893,7 @@ def set_config_value(key: str, value: str):
     # Check if it's an API key (goes to .env)
     api_keys = [
         'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'VOICE_TOOLS_OPENAI_KEY',
-        'EXA_API_KEY', 'PARALLEL_API_KEY', 'FIRECRAWL_API_KEY', 'FIRECRAWL_API_URL',
+        'EXA_API_KEY', 'PARALLEL_API_KEY', 'BRAVE_API_KEY', 'BRAVE_API_BASE_URL', 'FIRECRAWL_API_KEY', 'FIRECRAWL_API_URL',
         'FIRECRAWL_GATEWAY_URL', 'TOOL_GATEWAY_DOMAIN', 'TOOL_GATEWAY_SCHEME',
         'TOOL_GATEWAY_USER_TOKEN', 'TAVILY_API_KEY',
         'BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID', 'BROWSER_USE_API_KEY',
