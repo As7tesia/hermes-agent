@@ -107,7 +107,7 @@ DEFAULT_CONTEXT_LENGTHS = {
     "claude": 200000,
     # OpenAI
     "gpt-4.1": 1047576,
-    "gpt-5": 128000,
+    "gpt-5": 272000,
     "gpt-4": 128000,
     # Google
     "gemini": 1048576,
@@ -162,6 +162,8 @@ DEFAULT_CONTEXT_LENGTHS = {
     "mimo-v2-flash": 256000,
     "zai-org/GLM-5": 202752,
 }
+
+_OPENAI_GPT5_EFFECTIVE_CONTEXT = 272_000
 
 _CONTEXT_LENGTH_KEYS = (
     "context_length",
@@ -440,7 +442,7 @@ def fetch_model_metadata(force_refresh: bool = False) -> Dict[str, Dict[str, Any
         for model in data.get("data", []):
             model_id = model.get("id", "")
             entry = {
-                "context_length": model.get("context_length", 128000),
+                "context_length": _apply_context_policy(model_id, model.get("context_length", 128000)),
                 "max_completion_tokens": model.get("top_provider", {}).get("max_completion_tokens", 4096),
                 "name": model.get("name", model_id),
                 "pricing": model.get("pricing", {}),
@@ -848,6 +850,18 @@ def _normalize_model_version(model: str) -> str:
     Normalize both to dashes for comparison.
     """
     return model.replace(".", "-")
+
+
+def _apply_context_policy(model: str, context_length: Optional[int]) -> Optional[int]:
+    """Clamp provider metadata to Hermes' practical working context policy."""
+    if context_length is None:
+        return None
+    normalized = _strip_provider_prefix(str(model or "")).strip().lower()
+    if "/" in normalized:
+        normalized = normalized.rsplit("/", 1)[-1]
+    if normalized.startswith("gpt-5"):
+        return min(int(context_length), _OPENAI_GPT5_EFFECTIVE_CONTEXT)
+    return int(context_length)
 
 
 def _query_anthropic_context_length(model: str, base_url: str, api_key: str) -> Optional[int]:

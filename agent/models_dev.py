@@ -40,6 +40,11 @@ _MODELS_DEV_CACHE_TTL = 3600  # 1 hour in-memory
 _models_dev_cache: Dict[str, Any] = {}
 _models_dev_cache_time: float = 0
 
+# Hermes policy: treat OpenAI GPT-5 family models as 272K-context models even
+# when upstream catalogs advertise larger limits. This avoids drifting into
+# slower 400K+/1M-token behavior for routing and compression decisions.
+_OPENAI_GPT5_EFFECTIVE_CONTEXT = 272_000
+
 
 # ---------------------------------------------------------------------------
 # Dataclasses — rich metadata for providers and models
@@ -143,6 +148,7 @@ class ProviderInfo:
 # Hermes provider names → models.dev provider IDs
 PROVIDER_TO_MODELS_DEV: Dict[str, str] = {
     "openrouter": "openrouter",
+    "openai": "openai",
     "anthropic": "anthropic",
     "openai": "openai",
     "openai-codex": "openai",
@@ -277,7 +283,7 @@ def lookup_models_dev_context(provider: str, model: str) -> Optional[int]:
     # Exact match
     entry = models.get(model)
     if entry:
-        ctx = _extract_context(entry)
+        ctx = _extract_context(entry, provider)
         if ctx:
             return ctx
 
@@ -285,15 +291,32 @@ def lookup_models_dev_context(provider: str, model: str) -> Optional[int]:
     model_lower = model.lower()
     for mid, mdata in models.items():
         if mid.lower() == model_lower:
-            ctx = _extract_context(mdata)
+            ctx = _extract_context(mdata, provider)
             if ctx:
                 return ctx
 
     return None
 
 
-def _extract_context(entry: Dict[str, Any]) -> Optional[int]:
-    """Extract context_length from a models.dev model entry.
+def _coerce_positive_limit(value: Any) -> Optional[int]:
+    if isinstance(value, (int, float)) and value > 0:
+        return int(value)
+    return None
+
+
+def _openai_effective_context(model_id: str) -> Optional[int]:
+    normalized = str(model_id or "").strip().lower()
+    if normalized.startswith("gpt-5"):
+        return _OPENAI_GPT5_EFFECTIVE_CONTEXT
+    return None
+
+
+def _extract_context(entry: Dict[str, Any], provider: Optional[str] = None) -> Optional[int]:
+    """Extract the effective context length from a models.dev model entry.
+
+    Most providers expose a single usable context window via ``limit.context``.
+    Hermes intentionally caps OpenAI GPT-5 family models at 272K so routing,
+    compression, and preflight checks never assume the slower 400K+/1M tiers.
 
     Returns None for invalid/zero values (some audio/image models have context=0).
     """
@@ -302,10 +325,16 @@ def _extract_context(entry: Dict[str, Any]) -> Optional[int]:
     limit = entry.get("limit")
     if not isinstance(limit, dict):
         return None
-    ctx = limit.get("context")
-    if isinstance(ctx, (int, float)) and ctx > 0:
-        return int(ctx)
-    return None
+
+    if provider == "openai":
+        effective = _openai_effective_context(entry.get("id", ""))
+        if effective is not None:
+            return effective
+        input_cap = _coerce_positive_limit(limit.get("input"))
+        if input_cap is not None:
+            return input_cap
+
+    return _coerce_positive_limit(limit.get("context"))
 
 
 # ---------------------------------------------------------------------------
@@ -401,8 +430,8 @@ def get_model_capabilities(provider: str, model: str) -> Optional[ModelCapabilit
     if not isinstance(limit, dict):
         limit = {}
 
-    ctx = limit.get("context")
-    context_window = int(ctx) if isinstance(ctx, (int, float)) and ctx > 0 else 200000
+    ctx = _extract_context(entry, provider)
+    context_window = ctx if ctx is not None else 200000
 
     out = limit.get("output")
     max_output_tokens = int(out) if isinstance(out, (int, float)) and out > 0 else 8192
@@ -572,8 +601,8 @@ def _parse_model_info(model_id: str, raw: Dict[str, Any], provider_id: str) -> M
     input_mods = modalities.get("input") or []
     output_mods = modalities.get("output") or []
 
-    ctx = limit.get("context")
-    ctx_int = int(ctx) if isinstance(ctx, (int, float)) and ctx > 0 else 0
+    ctx = _extract_context(raw, provider_id)
+    ctx_int = ctx if ctx is not None else 0
     out = limit.get("output")
     out_int = int(out) if isinstance(out, (int, float)) and out > 0 else 0
     inp = limit.get("input")

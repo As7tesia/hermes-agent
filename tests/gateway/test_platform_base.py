@@ -1,15 +1,19 @@
 """Tests for gateway/platforms/base.py — MessageEvent, media extraction, message truncation."""
 
+import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import (
     BasePlatformAdapter,
     GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE,
     MessageEvent,
     MessageType,
+    SendResult,
     safe_url_for_log,
 )
+from gateway.session import SessionSource
 
 
 class TestSecretCaptureGuidance:
@@ -113,6 +117,63 @@ class TestMessageEventGetCommandArgs:
     def test_not_a_command_returns_full_text(self):
         event = MessageEvent(text="hello world")
         assert event.get_command_args() == "hello world"
+
+
+class _DummyAdapter(BasePlatformAdapter):
+    async def connect(self) -> bool:
+        return True
+
+    async def disconnect(self) -> None:
+        return None
+
+    async def send(self, chat_id: str, content: str, reply_to=None, metadata=None) -> SendResult:
+        return SendResult(success=True, message_id="sent")
+
+    async def send_file(self, chat_id: str, file_path: str, caption=None, reply_to=None, metadata=None) -> SendResult:
+        return SendResult(success=True, message_id="file")
+
+    async def get_chat_info(self, chat_id: str):
+        return {"chat_id": chat_id}
+
+
+class TestActiveSessionCommands:
+    def _make_event(self, text: str) -> MessageEvent:
+        source = SessionSource(platform=Platform.TELEGRAM, chat_id="chat-1", user_id="user-1")
+        return MessageEvent(text=text, source=source, message_id="msg-1")
+
+    @staticmethod
+    def _make_adapter() -> _DummyAdapter:
+        adapter = _DummyAdapter(PlatformConfig(enabled=True), Platform.TELEGRAM)
+        adapter._send_with_retry = AsyncMock(return_value=SendResult(success=True, message_id="reply"))
+        return adapter
+
+    def test_queue_command_bypasses_active_session_guard(self):
+        adapter = self._make_adapter()
+        event = self._make_event("/queue follow up")
+        session_key = "telegram:chat-1:user-1"
+        adapter._active_sessions[session_key] = asyncio.Event()
+        adapter._message_handler = AsyncMock(return_value="Queued for the next turn.")
+
+        asyncio.run(adapter.handle_message(event))
+
+        adapter._message_handler.assert_awaited_once_with(event)
+        adapter._send_with_retry.assert_awaited_once()
+        assert adapter._pending_messages == {}
+        assert adapter._active_sessions[session_key].is_set() is False
+
+    def test_q_alias_bypasses_active_session_guard(self):
+        adapter = self._make_adapter()
+        event = self._make_event("/q follow up")
+        session_key = "telegram:chat-1:user-1"
+        adapter._active_sessions[session_key] = asyncio.Event()
+        adapter._message_handler = AsyncMock(return_value="Queued for the next turn.")
+
+        asyncio.run(adapter.handle_message(event))
+
+        adapter._message_handler.assert_awaited_once_with(event)
+        adapter._send_with_retry.assert_awaited_once()
+        assert adapter._pending_messages == {}
+        assert adapter._active_sessions[session_key].is_set() is False
 
 
 # ---------------------------------------------------------------------------

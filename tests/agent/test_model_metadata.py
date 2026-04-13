@@ -244,6 +244,25 @@ class TestGetModelContextLength:
         assert get_model_context_length("qwen3-plus") == 131072
 
     @patch("agent.model_metadata.fetch_model_metadata")
+    @patch("agent.models_dev.lookup_models_dev_context")
+    def test_infers_openai_provider_from_base_url_for_context_lookup(self, mock_lookup, mock_fetch):
+        mock_fetch.return_value = {}
+        mock_lookup.return_value = 272000
+
+        result = get_model_context_length(
+            "gpt-5.4",
+            base_url="https://api.openai.com/v1",
+        )
+
+        assert result == 272000
+        mock_lookup.assert_called_once_with("openai", "gpt-5.4")
+
+    @patch("agent.model_metadata.fetch_model_metadata")
+    def test_openai_gpt5_default_context_is_272k(self, mock_fetch):
+        mock_fetch.return_value = {}
+        assert get_model_context_length("gpt-5.4") == 272000
+
+    @patch("agent.model_metadata.fetch_model_metadata")
     def test_api_missing_context_length_key(self, mock_fetch):
         """Model in API but without context_length → defaults to 128000."""
         mock_fetch.return_value = {"test/model": {"name": "Test"}}
@@ -504,6 +523,25 @@ class TestFetchModelMetadata:
 
         assert result["provider/test-model"]["context_length"] == 123456
         assert result["test-model"]["context_length"] == 123456
+
+    @patch("agent.model_metadata.requests.get")
+    def test_openrouter_metadata_applies_openai_gpt5_policy_cap(self, mock_get):
+        self._reset_cache()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [{
+                "id": "openai/gpt-5.4",
+                "context_length": 1050000,
+                "name": "GPT-5.4",
+            }]
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        result = fetch_model_metadata(force_refresh=True)
+
+        assert result["openai/gpt-5.4"]["context_length"] == 272000
+        assert result["gpt-5.4"]["context_length"] == 272000
 
     @patch("agent.model_metadata.requests.get")
     def test_ttl_expiry_triggers_refetch(self, mock_get):

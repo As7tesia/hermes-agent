@@ -13,6 +13,16 @@ from agent.models_dev import (
 
 
 SAMPLE_REGISTRY = {
+    "openai": {
+        "id": "openai",
+        "name": "OpenAI",
+        "models": {
+            "gpt-5.4": {
+                "id": "gpt-5.4",
+                "limit": {"context": 1050000, "input": 272000, "output": 128000},
+            },
+        },
+    },
     "anthropic": {
         "id": "anthropic",
         "name": "Anthropic",
@@ -80,6 +90,7 @@ class TestProviderMapping:
             assert isinstance(mdev_id, str)
 
     def test_known_providers_mapped(self):
+        assert PROVIDER_TO_MODELS_DEV["openai"] == "openai"
         assert PROVIDER_TO_MODELS_DEV["anthropic"] == "anthropic"
         assert PROVIDER_TO_MODELS_DEV["copilot"] == "github-copilot"
         assert PROVIDER_TO_MODELS_DEV["kilocode"] == "kilo"
@@ -96,6 +107,12 @@ class TestProviderMapping:
 class TestExtractContext:
     def test_valid_entry(self):
         assert _extract_context({"limit": {"context": 128000}}) == 128000
+
+    def test_openai_gpt5_prefers_272k_policy_cap(self):
+        assert _extract_context(
+            {"id": "gpt-5.4", "limit": {"context": 1050000, "input": 922000, "output": 128000}},
+            "openai",
+        ) == 272000
 
     def test_zero_context_returns_none(self):
         assert _extract_context({"limit": {"context": 0}}) is None
@@ -154,6 +171,12 @@ class TestLookupModelsDevContext:
     def test_empty_registry(self, mock_fetch):
         mock_fetch.return_value = {}
         assert lookup_models_dev_context("anthropic", "claude-opus-4-6") is None
+
+
+    @patch("agent.models_dev.fetch_models_dev")
+    def test_openai_provider_context_lookup(self, mock_fetch):
+        mock_fetch.return_value = SAMPLE_REGISTRY
+        assert lookup_models_dev_context("openai", "gpt-5.4") == 272000
 
 
 class TestFetchModelsDev:
@@ -284,3 +307,9 @@ class TestGetModelCapabilities:
         with patch("agent.models_dev.fetch_models_dev", return_value=CAPS_REGISTRY):
             caps = get_model_capabilities("anthropic", "nonexistent-model")
         assert caps is None
+
+    def test_openai_capabilities_use_272k_policy_cap(self):
+        with patch("agent.models_dev.fetch_models_dev", return_value=SAMPLE_REGISTRY):
+            caps = get_model_capabilities("openai", "gpt-5.4")
+        assert caps is not None
+        assert caps.context_window == 272000
